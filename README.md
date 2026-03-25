@@ -52,20 +52,12 @@ npm run electron
 ```
 
 ## 🌐 Deployment
-You can deploy this game to **Vercel** or **Render**.
+The game is optimized for deployment on **Vercel**.
 
-### 🔼 Deploy to Vercel (Recommended for Frontend)
+### 🔼 Deploy to Vercel
 1.  **Sign in to [Vercel](https://vercel.com)** with your GitHub.
 2.  Import the `Police-Thief-Game` repository.
 3.  Vercel will automatically detect the settings and deploy it!
-
-> **Note**: For the multiplayer (Socket.IO) to work perfectly on Vercel, you might need to connect it to a separate backend or use a service like Railway/Render for the server part.
-
-### 🚀 Deploy to Render (Recommended for Backend/Server)
-1.  **Sign in to [Render](https://render.com)** with your GitHub.
-2.  Connect this repo as a **Web Service**.
-3.  **Build Command**: `npm install`
-4.  **Start Command**: `node server.js`
 
 ---
 
