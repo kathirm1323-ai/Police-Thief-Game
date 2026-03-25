@@ -5,7 +5,7 @@
 Thirudan Police is a modern, web-based version of the classic Indian social game "Raja Rani Chor Mantri". Built with **Socket.IO**, it allows friends to play together on their own devices from anywhere in the world.
 
 ## 🚀 Live Demo
-[**Click here to Play!**](https://police-thief-game.vercel.app)
+[**Click here to Play!**](https://police-thief-game-qilrj8rj9-kathir-ms-projects.vercel.app)
 ---
 
 ## ✨ Features
