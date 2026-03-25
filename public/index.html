@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Thirudan Police - Play the classic Tamil card game online with friends on different devices!">
+    <title>திருடன் போலீஸ் | Thirudan Police Game</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#7b61ff">
+    <link rel="apple-touch-icon" href="game_icon.png">
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+
+    <!-- ========== SCREEN 1: WELCOME ========== -->
+    <div class="screen active" id="screen-welcome">
+        <div class="welcome-container">
+            <div class="logo-area">
+                <div class="logo-icons">
+                    <span class="logo-icon king">👑</span>
+                    <span class="logo-icon queen">💎</span>
+                    <span class="logo-icon police">🛡️</span>
+                    <span class="logo-icon thief">🦹</span>
+                </div>
+                <h1 class="game-title">திருடன் போலீஸ்</h1>
+                <p class="game-subtitle">Thirudan Police</p>
+                <p class="tagline">The Classic Tamil Card Game • Play Online!</p>
+            </div>
+            <div class="role-cards-preview">
+                <div class="preview-card" style="--card-color: var(--king-color)"><span>👑</span><small>Raja</small></div>
+                <div class="preview-card" style="--card-color: var(--queen-color)"><span>💎</span><small>Rani</small></div>
+                <div class="preview-card" style="--card-color: var(--police-color)"><span>🛡️</span><small>Police</small></div>
+                <div class="preview-card" style="--card-color: var(--thief-color)"><span>🦹</span><small>Thief</small></div>
+                <div class="preview-card" style="--card-color: var(--minister-color)"><span>📜</span><small>Minister</small></div>
+                <div class="preview-card" style="--card-color: var(--doctor-color)"><span>👨‍⚕️</span><small>Doctor</small></div>
+            </div>
+            <div class="welcome-actions">
+                <button class="btn btn-primary btn-glow" id="btn-create">
+                    <span>🎮 Create Room</span>
+                </button>
+                <button class="btn btn-secondary" id="btn-join">
+                    <span>🔗 Join Room</span>
+                </button>
+            </div>
+            <div class="rules-toggle">
+                <button class="btn btn-ghost" id="btn-rules">📜 How to Play with Friends</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== RULES MODAL ========== -->
+    <div class="modal-overlay" id="modal-rules">
+        <div class="modal glass-panel">
+            <button class="modal-close" id="btn-close-rules">&times;</button>
+            <h2>📜 How to Play with Friends</h2>
+            <div class="rules-content">
+                <div class="rules-section">
+                    <h3>🌐 Setting Up (Online)</h3>
+                    <div class="rule-step">
+                        <div class="step-number">1</div>
+                        <div>
+                            <strong>Create a Room</strong>
+                            <p>One person taps <em>"Create Room"</em>, enters their name, and picks the number of rounds. They'll get a <strong>Room Code</strong> (like <code>ABC12</code>).</p>
+                        </div>
+                    </div>
+                    <div class="rule-step">
+                        <div class="step-number">2</div>
+                        <div>
+                            <strong>Share the Code</strong>
+                            <p>Share the Room Code with your friends via WhatsApp, message, or just tell them! Everyone opens the game link on their own phone/laptop.</p>
+                        </div>
+                    </div>
+                    <div class="rule-step">
+                        <div class="step-number">3</div>
+                        <div>
+                            <strong>Friends Join</strong>
+                            <p>Friends tap <em>"Join Room"</em>, enter the code and their name. You need <strong>4 to 10 players</strong> to play!</p>
+                        </div>
+                    </div>
+                    <div class="rule-step">
+                        <div class="step-number">4</div>
+                        <div>
+                            <strong>Host Starts the Game</strong>
+                            <p>Once everyone has joined, the host taps <em>"Start Game"</em> and the fun begins!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rules-divider"></div>
+
+                <div class="rules-section">
+                    <h3>🎲 How Each Round Works</h3>
+                    <div class="rule-step">
+                        <div class="step-number">A</div>
+                        <div>
+                            <strong>Get Your Secret Role</strong>
+                            <p>Each player gets a <strong>secret role</strong> on their own screen — <em>only you see it!</em> Roles include Raja, Rani, Minister, Doctor, Teacher, Gardener, Milkman, Farmer, Police, and Thirudan.</p>
+                        </div>
+                    </div>
+                    <div class="rule-step">
+                        <div class="step-number">B</div>
+                        <div>
+                            <strong>Police Reveals & Guesses</strong>
+                            <p>The <strong>Police</strong> is revealed to everyone. The Police must figure out who the <strong>Thief (Thirudan)</strong> is and pick them!</p>
+                        </div>
+                    </div>
+                    <div class="rule-step">
+                        <div class="step-number">C</div>
+                        <div>
+                            <strong>Results & Scores</strong>
+                            <p>All roles are revealed! Everyone sees who was who and the points earned.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rules-divider"></div>
+
+                <div class="rules-section">
+                    <h3>💰 Points System</h3>
+                    <div class="points-grid">
+                        <div class="point-item"><span>👑</span> Raja (King) — <strong>1000 pts</strong></div>
+                        <div class="point-item"><span>💎</span> Rani (Queen) — <strong>500 pts</strong></div>
+                        <div class="point-item"><span>📜</span> Minister — <strong>400 pts</strong></div>
+                        <div class="point-item"><span>👨‍⚕️</span> Doctor — <strong>350 pts</strong></div>
+                        <div class="point-item"><span>👨‍🏫</span> Teacher — <strong>300 pts</strong></div>
+                        <div class="point-item"><span>🌺</span> Gardener — <strong>250 pts</strong></div>
+                        <div class="point-item"><span>🥛</span> Milkman — <strong>200 pts</strong></div>
+                        <div class="point-item"><span>👨‍🌾</span> Farmer — <strong>200 pts</strong></div>
+                        <div class="point-item highlight-good"><span>🛡️</span> Police — <strong>800 pts</strong> if catches thief, <strong>0</strong> if wrong</div>
+                        <div class="point-item highlight-bad"><span>🦹</span> Thief — <strong>0 pts</strong> if caught, <strong>800 pts</strong> if escapes!</div>
+                    </div>
+                </div>
+
+                <div class="rules-divider"></div>
+
+                <div class="rules-section">
+                    <h3>🏆 Winning</h3>
+                    <p class="rules-text">After all rounds, the player with the <strong>highest total score</strong> wins! The key is luck (getting high-point roles) and skill (the Police must observe and guess correctly, the Thief must act natural!).</p>
+                </div>
+
+                <div class="rules-divider"></div>
+
+                <div class="rules-section">
+                    <h3>💡 Tips for Playing with Friends</h3>
+                    <ul class="tips-list">
+                        <li>🎤 <strong>Use a voice/video call</strong> while playing — it's way more fun when you can see reactions!</li>
+                        <li>🤫 <strong>Keep a poker face</strong> — if you're the Thief, don't give it away!</li>
+                        <li>🕵️ <strong>Police: Watch reactions</strong> — when roles are revealed, see who looks nervous!</li>
+                        <li>😈 <strong>Thief: Act confident</strong> — accuse someone else of being the thief to throw off the Police!</li>
+                        <li>📱 <strong>Everyone needs their own device</strong> — phone, tablet, or laptop all work!</li>
+                        <li>🌐 <strong>Same Wi-Fi network</strong> — all players must be on the same network, or deploy the game online!</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 2A: CREATE ROOM ========== -->
+    <div class="screen" id="screen-create">
+        <div class="setup-container glass-panel">
+            <h2>🎮 Create Room</h2>
+            <div class="input-group">
+                <label for="create-name">Your Name</label>
+                <input type="text" id="create-name" placeholder="Enter your name..." maxlength="15" autocomplete="off">
+            </div>
+            <div class="rounds-selector">
+                <label>Number of Rounds</label>
+                <div class="rounds-options">
+                    <button class="round-btn" data-rounds="5">5</button>
+                    <button class="round-btn active" data-rounds="10">10</button>
+                    <button class="round-btn" data-rounds="15">15</button>
+                    <button class="round-btn" data-rounds="20">20</button>
+                </div>
+            </div>
+            <div class="setup-actions">
+                <button class="btn btn-ghost" id="btn-back-create">← Back</button>
+                <button class="btn btn-primary" id="btn-create-room">Create Room</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 2B: JOIN ROOM ========== -->
+    <div class="screen" id="screen-join">
+        <div class="setup-container glass-panel">
+            <h2>🔗 Join Room</h2>
+            <div class="input-group">
+                <label for="join-name">Your Name</label>
+                <input type="text" id="join-name" placeholder="Enter your name..." maxlength="15" autocomplete="off">
+            </div>
+            <div class="input-group">
+                <label for="join-code">Room Code</label>
+                <input type="text" id="join-code" placeholder="Enter 5-letter code..." maxlength="5" autocomplete="off" class="code-input">
+            </div>
+            <div class="setup-actions">
+                <button class="btn btn-ghost" id="btn-back-join">← Back</button>
+                <button class="btn btn-primary" id="btn-join-room">Join Room</button>
+            </div>
+            <p class="error-text hidden" id="join-error"></p>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 3: LOBBY ========== -->
+    <div class="screen" id="screen-lobby">
+        <div class="lobby-container glass-panel">
+            <h2>🏠 Game Lobby</h2>
+            <div class="room-code-display">
+                <span class="room-label">Room Code</span>
+                <span class="room-code" id="lobby-code">ABC12</span>
+                <button class="btn btn-ghost btn-copy" id="btn-copy-code" title="Copy code">📋</button>
+            </div>
+            <p class="lobby-info">Share this code with friends to join!</p>
+            <div class="player-list" id="lobby-players">
+                <!-- Populated by JS -->
+            </div>
+            <p class="player-count" id="player-count">1 / 10 players</p>
+            <div class="lobby-status" id="lobby-status">Waiting for players... (need at least 4)</div>
+            <button class="btn btn-primary btn-start-game hidden" id="btn-start-game">🚀 Start Game</button>
+            <p class="lobby-note" id="lobby-note">Only the host can start the game</p>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 4: YOUR ROLE ========== -->
+    <div class="screen" id="screen-role">
+        <div class="role-reveal-container">
+            <div class="round-indicator">
+                <span>Round</span>
+                <span class="round-number" id="round-display">1 / 10</span>
+            </div>
+            <h3 class="role-title">Your Secret Role</h3>
+            <div class="glass-panel chit-card" id="chit-card">
+                <div class="chit-front">
+                    <div class="chit-emoji" id="chit-emoji">👑</div>
+                    <div class="chit-role" id="chit-role">Raja</div>
+                    <div class="chit-role-tamil" id="chit-role-tamil">ராஜா</div>
+                    <div class="chit-points" id="chit-points">1000 Points</div>
+                </div>
+            </div>
+            <p class="role-hint" id="role-hint">Keep it secret! 🤫</p>
+            <div class="waiting-dots">
+                <span>Waiting for Police to guess</span>
+                <div class="dots"><span>.</span><span>.</span><span>.</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 5: POLICE GUESS ========== -->
+    <div class="screen" id="screen-guess">
+        <div class="guess-container glass-panel">
+            <div class="police-badge">🛡️</div>
+            <h2 id="guess-title">You are the Police!</h2>
+            <p class="guess-instruction" id="guess-instruction">Who is the Thief? Choose wisely!</p>
+            <div class="suspect-list" id="suspect-list"></div>
+            <button class="btn btn-primary btn-arrest" id="btn-arrest" disabled>🚨 Arrest!</button>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 6: ROUND RESULT ========== -->
+    <div class="screen" id="screen-result">
+        <div class="result-container">
+            <div class="result-header" id="result-header">
+                <div class="result-icon" id="result-icon">✅</div>
+                <h2 id="result-title">Correct Guess!</h2>
+                <p id="result-subtitle">The thief has been caught!</p>
+            </div>
+            <div class="result-cards" id="result-cards"></div>
+            <div class="score-summary glass-panel">
+                <h3>Scoreboard</h3>
+                <div class="score-table" id="score-table"></div>
+            </div>
+            <button class="btn btn-primary hidden" id="btn-next-round">Next Round →</button>
+            <p class="waiting-text hidden" id="waiting-next">Waiting for host to continue...</p>
+        </div>
+    </div>
+
+    <!-- ========== SCREEN 7: FINAL SCOREBOARD ========== -->
+    <div class="screen" id="screen-final">
+        <div class="final-container">
+            <div class="trophy-area">
+                <div class="trophy">🏆</div>
+                <h2>Game Over!</h2>
+                <p class="winner-text" id="winner-text">Player Wins!</p>
+            </div>
+            <div class="final-scores glass-panel" id="final-scores"></div>
+            <div class="final-actions">
+                <button class="btn btn-primary btn-glow hidden" id="btn-play-again">🔄 Play Again</button>
+                <button class="btn btn-ghost" id="btn-new-game">🏠 Back to Home</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div class="toast hidden" id="toast"></div>
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered!'))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

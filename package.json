@@ -1,0 +1,30 @@
+{
+  "name": "thirudan-police",
+  "version": "2.0.0",
+  "description": "Thirudan Police - Classic Tamil multiplayer card game",
+  "main": "main.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "electron": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.4"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.thirudan.police",
+    "productName": "Thirudan Police",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

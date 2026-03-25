@@ -1,0 +1,25 @@
+{
+  "name": "thirudan-police",
+  "short_name": "திருடன் போலீஸ்",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a1a",
+  "theme_color": "#7b61ff",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "game_icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "description": "Thirudan Police - The Classic Tamil Card Game. Play with friends online!",
+  "screenshots": [
+    {
+      "src": "welcome_screen.png",
+      "sizes": "1536x776",
+      "type": "image/png"
+    }
+  ]
+}
