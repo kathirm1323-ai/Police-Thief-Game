@@ -6,8 +6,6 @@ Thirudan Police is a modern, web-based version of the classic Indian social game
 
 ## 🚀 Live Demo
 [**Click here to Play!**](https://police-thief-game.onrender.com) 
-*(Note: If the link is not yet active, you can deploy it to Render using the instructions below.)*
-
 ---
 
 ## ✨ Features
