@@ -5,7 +5,8 @@
 Thirudan Police is a modern, web-based version of the classic Indian social game "Raja Rani Chor Mantri". Built with **Socket.IO**, it allows friends to play together on their own devices from anywhere in the world.
 
 ## 🚀 Live Demo
-[**Click here to Play!**](https://police-thief-game-qilrj8rj9-kathir-ms-projects.vercel.app)
+[**Click here to Play (Netlify)**](https://thirudan-police.netlify.app)
+
 ---
 
 ## ✨ Features
@@ -52,12 +53,20 @@ npm run electron
 ```
 
 ## 🌐 Deployment
-The game is optimized for deployment on **Vercel**.
+The game is optimized for deployment on **Netlify** (Frontend) and **Render** (Backend).
 
-### 🔼 Deploy to Vercel
-1.  **Sign in to [Vercel](https://vercel.com)** with your GitHub.
-2.  Import the `Police-Thief-Game` repository.
-3.  Vercel will automatically detect the settings and deploy it!
+### 🚀 Deploy to Netlify
+1.  **Sign in to [Netlify](https://app.netlify.com/start)** with your GitHub.
+2.  Select your `Police-Thief-Game` repository.
+3.  Netlify will automatically use the `netlify.toml` file to deploy!
+
+### 🧠 Deploy the Brain (Render)
+For the multiplayer logic, host the `server.js` on **Render**.
+1.  **Sign in to [Render](https://dashboard.render.com)**.
+2.  Create a **New Web Service** with this repository.
+3.  **Build Command**: `npm install`
+4.  **Start Command**: `node server.js`
+
 
 ---
 
