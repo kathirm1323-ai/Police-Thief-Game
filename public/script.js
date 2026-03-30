@@ -1,5 +1,7 @@
 // ===== Socket.IO Connection =====
-const socket = io();
+const BACKEND_URL = ''; // Leave blank to use host origin, or update to your Render URL
+const socket = io(BACKEND_URL);
+
 
 let myName = '';
 let roomCode = '';
