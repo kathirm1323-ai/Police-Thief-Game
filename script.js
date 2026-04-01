@@ -1,37 +1,43 @@
-// ===== Game State =====
-const gameState = {
-    players: [],
-    totalRounds: 10,
-    currentRound: 0,
-    scores: {},
-    roles: {},         // { playerName: 'king' | 'queen' | 'police' | 'thief' }
-    currentViewIndex: 0,
-    selectedSuspect: null,
-    policePlayer: null,
-    thiefPlayer: null
-};
+// ===== PeerJS Connection =====
+let peer = new Peer();
+let conn = null; // Connection to host (if client)
+let connections = {}; // Connections to clients (if host)
+let myPlayerId = null;
 
-const ROLES = {
-    king:   { emoji: '👑', name: 'Raja',     tamil: 'ராஜா',       points: 1000, cssClass: 'king-card',   resultClass: 'king'   },
-    queen:  { emoji: '💎', name: 'Rani',     tamil: 'ராணி',       points: 500,  cssClass: 'queen-card',  resultClass: 'queen'  },
-    police: { emoji: '🛡️', name: 'Police',   tamil: 'போலீஸ்',     points: 800,  cssClass: 'police-card', resultClass: 'police' },
-    thief:  { emoji: '🦹', name: 'Thirudan', tamil: 'திருடன்', points: 0,    cssClass: 'thief-card',  resultClass: 'thief'  }
-};
+let myName = '';
+let roomCode = '';
+let isHost = false;
+let selectedSuspect = null;
+let totalRounds = 10;
+let players = []; // List of player names
+let scores = {}; // { playerName: score }
+let roles = {}; // { playerName: roleKey }
+let currentRound = 0;
+let phase = 'lobby'; // lobby | viewing | guessing | result
 
-// ===== DOM Helpers =====
+
 const $ = id => document.getElementById(id);
 const screens = {
-    welcome:    $('screen-welcome'),
-    setup:      $('screen-setup'),
-    distribute: $('screen-distribute'),
-    guess:      $('screen-guess'),
-    result:     $('screen-result'),
-    final:      $('screen-final')
+    welcome: $('screen-welcome'),
+    create:  $('screen-create'),
+    join:    $('screen-join'),
+    lobby:   $('screen-lobby'),
+    role:    $('screen-role'),
+    guess:   $('screen-guess'),
+    result:  $('screen-result'),
+    final:   $('screen-final')
 };
 
 function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[name].classList.add('active');
+}
+
+function showToast(msg) {
+    const toast = $('toast');
+    toast.textContent = msg;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
 }
 
 // ===== Particles =====
@@ -51,8 +57,157 @@ function createParticles() {
         container.appendChild(p);
     }
 }
+createParticles();
+window.addEventListener('resize', createParticles);
 
-// ===== Shuffle =====
+// ===== Peer Setup =====
+peer.on('open', (id) => {
+    myPlayerId = id;
+    console.log('My Peer ID: ' + id);
+});
+
+peer.on('error', (err) => {
+    console.error('Peer error:', err);
+    if (err.type === 'peer-unavailable') {
+        showToast('Room not found! Check the code.');
+    } else {
+        showToast('Connection error. Please try again.');
+    }
+});
+
+// Host listener (for connections from clients)
+peer.on('connection', (c) => {
+    c.on('open', () => {
+        // A client has connected to the host
+        c.on('data', (payload) => {
+            handleHostEvent(payload.type, payload.data, c);
+        });
+        c.on('close', () => {
+            handleHostPlayerDisconnect(c);
+        });
+    });
+});
+
+// Client listener (for data from the host)
+function setupClientConnection(c) {
+    c.on('data', (payload) => {
+        handleClientEvent(payload.type, payload.data);
+    });
+    c.on('close', () => {
+        showToast('Host disconnected.');
+        setTimeout(() => window.location.reload(), 3000);
+    });
+}
+
+// ===== WELCOME SCREEN =====
+$('btn-create').addEventListener('click', () => showScreen('create'));
+$('btn-join').addEventListener('click', () => showScreen('join'));
+$('btn-rules').addEventListener('click', () => $('modal-rules').classList.add('active'));
+$('btn-close-rules').addEventListener('click', () => $('modal-rules').classList.remove('active'));
+$('modal-rules').addEventListener('click', e => { if (e.target === $('modal-rules')) $('modal-rules').classList.remove('active'); });
+
+// ===== ROUND BUTTONS =====
+document.querySelectorAll('.round-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        btn.closest('.rounds-options').querySelectorAll('.round-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        totalRounds = parseInt(btn.dataset.rounds);
+    });
+});
+
+// ===== CREATE ROOM =====
+$('btn-back-create').addEventListener('click', () => showScreen('welcome'));
+$('btn-create-room').addEventListener('click', () => {
+    const name = $('create-name').value.trim();
+    if (!name) { $('create-name').focus(); return; }
+    myName = name;
+    isHost = true;
+    
+    // In P2P, the room code is simply the Host's Peer ID
+    // We'll use the Peer ID assigned by PeerJS (e.g. 5 random chars)
+    roomCode = myPlayerId.substring(0, 5).toUpperCase();
+    
+    // Since we need to use this specific ID for others to join, 
+    // we should have ideally requested a custom ID. 
+    // Let's re-initialize with a 5-char ID if possible, but PeerJS free tier
+    // might have conflicts. Let's just use the assigned ID.
+    roomCode = myPlayerId; 
+    
+    handleHostEvent('create-room', { playerName: name, totalRounds });
+});
+
+// ===== JOIN ROOM =====
+$('btn-back-join').addEventListener('click', () => showScreen('welcome'));
+$('btn-join-room').addEventListener('click', () => {
+    const name = $('join-name').value.trim();
+    const code = $('join-code').value.trim(); // Code is the host's Peer ID
+    if (!name) { $('join-name').focus(); return; }
+    if (!code) { $('join-code').focus(); return; }
+    
+    myName = name;
+    roomCode = code;
+    
+    conn = peer.connect(code);
+    conn.on('open', () => {
+        setupClientConnection(conn);
+        conn.send({ type: 'join-room', data: { playerName: name } });
+    });
+});
+
+// ===== LOBBY =====
+$('btn-copy-code').addEventListener('click', () => {
+    navigator.clipboard.writeText(roomCode).then(() => showToast('Room code copied!'));
+});
+
+$('btn-start-game').addEventListener('click', () => {
+    if (isHost) handleHostEvent('start-game');
+});
+
+// ===== GUESS =====
+$('btn-arrest').addEventListener('click', () => {
+    if (!selectedSuspect) return;
+    $('btn-arrest').disabled = true;
+    if (isHost) {
+        handleHostEvent('police-guess', { suspectName: selectedSuspect });
+    } else {
+        conn.send({ type: 'police-guess', data: { suspectName: selectedSuspect } });
+    }
+});
+
+// ===== NEXT ROUND =====
+$('btn-next-round').addEventListener('click', () => {
+    if (isHost) handleHostEvent('next-round');
+});
+
+// ===== PLAY AGAIN & NEW GAME =====
+$('btn-play-again').addEventListener('click', () => {
+    clearConfetti();
+    if (isHost) handleHostEvent('play-again');
+});
+$('btn-new-game').addEventListener('click', () => {
+    clearConfetti();
+    window.location.reload();
+});
+
+// ========================================
+//         P2P EVENT HANDLERS
+// ========================================
+
+const ALL_ROLES = {
+    king:     { emoji: '👑', name: 'Raja',      tamil: 'ராஜா',          points: 1000 },
+    queen:    { emoji: '💎', name: 'Rani',      tamil: 'ராணி',          points: 500  },
+    minister: { emoji: '📜', name: 'Minister',  tamil: 'மந்திரி',      points: 400  },
+    police:   { emoji: '🛡️', name: 'Police',    tamil: 'போலீஸ்',       points: 0    },
+    thief:    { emoji: '🦹', name: 'Thirudan',  tamil: 'திருடன்',   points: 0    },
+    doctor:   { emoji: '👨‍⚕️', name: 'Doctor',    tamil: 'மருத்துவர்', points: 350  },
+    teacher:  { emoji: '👨‍🏫', name: 'Teacher',   tamil: 'ஆசிரியர்',   points: 300  },
+    milkman:  { emoji: '🥛', name: 'Milkman',   tamil: 'பால்காரன்',  points: 200  },
+    gardener: { emoji: '🌺', name: 'Gardener',  tamil: 'தோட்டக்காரன்', points: 250  },
+    farmer:   { emoji: '👨‍🌾', name: 'Farmer',    tamil: 'விவசாயி',     points: 200  }
+};
+
+const ROLE_PRIORITY = ['king', 'police', 'thief', 'queen', 'minister', 'doctor', 'teacher', 'gardener', 'milkman', 'farmer'];
+
 function shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -62,133 +217,356 @@ function shuffle(arr) {
     return a;
 }
 
-// ===== WELCOME SCREEN =====
-$('btn-start').addEventListener('click', () => showScreen('setup'));
-$('btn-rules').addEventListener('click', () => $('modal-rules').classList.add('active'));
-$('btn-close-rules').addEventListener('click', () => $('modal-rules').classList.remove('active'));
-$('modal-rules').addEventListener('click', e => {
-    if (e.target === $('modal-rules')) $('modal-rules').classList.remove('active');
-});
+// --- HOST LOGIC (Central Brain) ---
+function handleHostEvent(type, data, clientConn) {
+    if (!isHost) return;
 
-// ===== SETUP SCREEN =====
-$('btn-back-setup').addEventListener('click', () => showScreen('welcome'));
+    switch (type) {
+        case 'create-room':
+            players = [{ name: data.playerName, conn: null, id: 'host' }];
+            scores = { [data.playerName]: 0 };
+            totalRounds = data.totalRounds;
+            currentRound = 0;
+            phase = 'lobby';
+            handleClientEvent('room-created', { code: roomCode, players: [data.playerName] });
+            break;
 
-document.querySelectorAll('.round-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.round-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        gameState.totalRounds = parseInt(btn.dataset.rounds);
-    });
-});
+        case 'join-room':
+            if (phase !== 'lobby') {
+                clientConn.send({ type: 'join-error', data: 'Game already in progress!' });
+                return;
+            }
+            if (players.length >= 10) {
+                clientConn.send({ type: 'join-error', data: 'Room is full!' });
+                return;
+            }
+            if (players.some(p => p.name.toLowerCase() === data.playerName.toLowerCase())) {
+                clientConn.send({ type: 'join-error', data: 'Name already taken!' });
+                return;
+            }
 
-$('btn-play').addEventListener('click', () => {
-    const names = [];
-    for (let i = 1; i <= 4; i++) {
-        const name = $('player' + i).value.trim();
-        if (!name) {
-            $('player' + i).focus();
-            $('player' + i).style.borderColor = 'var(--error-color)';
-            setTimeout(() => $('player' + i).style.borderColor = '', 1500);
-            return;
+            // Register new player
+            players.push({ name: data.playerName, conn: clientConn, id: clientConn.peer });
+            connections[clientConn.peer] = clientConn;
+            scores[data.playerName] = 0;
+            
+            const playerNames = players.map(p => p.name);
+            broadcastToAll('player-joined', { players: playerNames, newPlayer: data.playerName });
+            break;
+
+        case 'start-game':
+            if (players.length < 4) {
+                showToast('Need at least 4 players!');
+                return;
+            }
+            phase = 'playing';
+            currentRound = 0;
+            players.forEach(p => scores[p.name] = 0);
+            broadcastToAll('game-started', { totalRounds });
+            startNextRoundP2P();
+            break;
+
+        case 'police-guess':
+            const policePlayer = players.find(p => roles[p.name] === 'police');
+            const thiefPlayer = players.find(p => roles[p.name] === 'thief');
+            const correct = data.suspectName === thiefPlayer.name;
+
+            const roundPoints = {};
+            players.forEach(p => {
+                const role = roles[p.name];
+                if (role === 'police') roundPoints[p.name] = correct ? 800 : 0;
+                else if (role === 'thief') roundPoints[p.name] = correct ? 0 : 800;
+                else roundPoints[p.name] = ALL_ROLES[role].points;
+                scores[p.name] += roundPoints[p.name];
+            });
+
+            const revealData = {};
+            players.forEach(p => {
+                const r = roles[p.name];
+                revealData[p.name] = { 
+                    role: r, 
+                    ...ALL_ROLES[r], 
+                    roundPoints: roundPoints[p.name] 
+                };
+            });
+
+            const sortedScores = players.map(p => ({ name: p.name, score: scores[p.name] }))
+                                        .sort((a, b) => b.score - a.score);
+            
+            phase = 'result';
+            broadcastToAll('round-result', {
+                correct,
+                policeName: policePlayer.name,
+                thiefName: thiefPlayer.name,
+                guessedName: data.suspectName,
+                revealData,
+                scores: sortedScores,
+                isLastRound: currentRound >= totalRounds
+            });
+            break;
+
+        case 'next-round':
+            if (currentRound >= totalRounds) {
+                const finalScores = players.map(p => ({ name: p.name, score: scores[p.name] }))
+                                            .sort((a, b) => b.score - a.score);
+                broadcastToAll('game-over', { scores: finalScores });
+            } else {
+                startNextRoundP2P();
+            }
+            break;
+
+        case 'play-again':
+            players.forEach(p => scores[p.name] = 0);
+            currentRound = 0;
+            broadcastToAll('game-started', { totalRounds });
+            startNextRoundP2P();
+            break;
+    }
+}
+
+function startNextRoundP2P() {
+    currentRound++;
+    phase = 'viewing';
+    
+    const roleKeys = ROLE_PRIORITY.slice(0, players.length);
+    const shuffled = shuffle(roleKeys);
+    roles = {};
+    players.forEach((p, i) => roles[p.name] = shuffled[i]);
+
+    const police = players.find(p => roles[p.name] === 'police');
+
+    // Inform each player individually
+    players.forEach(p => {
+        const payload = {
+            round: currentRound,
+            totalRounds,
+            yourRole: roles[p.name],
+            yourRoleData: ALL_ROLES[roles[p.name]],
+            policeName: police.name,
+            players: players.map(pl => pl.name)
+        };
+        if (p.id === 'host') {
+            handleClientEvent('new-round', payload);
+        } else {
+            p.conn.send({ type: 'new-round', data: payload });
         }
-        names.push(name);
-    }
-
-    // Check for duplicate names
-    const uniqueNames = new Set(names);
-    if (uniqueNames.size < 4) {
-        alert('All player names must be unique!');
-        return;
-    }
-
-    gameState.players = names;
-    gameState.scores = {};
-    names.forEach(n => gameState.scores[n] = 0);
-    gameState.currentRound = 0;
-    startNewRound();
-});
-
-// ===== ROUND LOGIC =====
-function startNewRound() {
-    gameState.currentRound++;
-    $('round-display').textContent = `${gameState.currentRound} / ${gameState.totalRounds}`;
-
-    // Assign roles
-    const roleKeys = shuffle(['king', 'queen', 'police', 'thief']);
-    gameState.roles = {};
-    gameState.players.forEach((p, i) => {
-        gameState.roles[p] = roleKeys[i];
     });
 
-    // Find police and thief
-    gameState.policePlayer = gameState.players.find(p => gameState.roles[p] === 'police');
-    gameState.thiefPlayer = gameState.players.find(p => gameState.roles[p] === 'thief');
-    gameState.selectedSuspect = null;
-    gameState.currentViewIndex = 0;
-
-    showDistributeScreen();
+    // Transit to guessing after delay
+    setTimeout(() => {
+        phase = 'guessing';
+        broadcastToAll('police-turn', {
+            policeName: police.name,
+            suspects: players.filter(p => roles[p.name] !== 'police').map(p => p.name)
+        });
+    }, 6000);
 }
 
-function showDistributeScreen() {
-    showScreen('distribute');
-    showPassPrompt();
+function broadcastToAll(type, data) {
+    players.forEach(p => {
+        if (p.id === 'host') handleClientEvent(type, data);
+        else if (p.conn) p.conn.send({ type, data });
+    });
 }
 
-function showPassPrompt() {
-    const player = gameState.players[gameState.currentViewIndex];
-    $('current-player-name').textContent = player;
-    $('pass-prompt').style.display = 'block';
-    $('chit-reveal').classList.add('hidden');
+function handleHostPlayerDisconnect(conn) {
+    const p = players.find(player => player.id === conn.peer);
+    if (!p) return;
+    const leaveName = p.name;
+    players = players.filter(player => player.id !== conn.peer);
+    delete connections[conn.peer];
+    broadcastToAll('player-left', { players: players.map(pl => pl.name), leftPlayer: leaveName });
 }
 
-$('btn-view-chit').addEventListener('click', () => {
-    const player = gameState.players[gameState.currentViewIndex];
-    const roleKey = gameState.roles[player];
-    const role = ROLES[roleKey];
+// --- CLIENT LOGIC (UI Updates) ---
+function handleClientEvent(type, data) {
+    switch (type) {
+        case 'room-created':
+            roomCode = data.code;
+            showScreen('lobby');
+            $('lobby-code').textContent = data.code;
+            updateLobbyPlayers(data.players, true);
+            break;
 
-    // Show the chit
-    $('chit-emoji').textContent = role.emoji;
-    $('chit-role').textContent = role.name;
-    $('chit-role-tamil').textContent = role.tamil;
-    $('chit-points').textContent = roleKey === 'police' ? 'Catch the Thief!' :
-                                   roleKey === 'thief'  ? 'Don\'t get caught!' :
-                                   role.points + ' Points';
+        case 'player-joined':
+            if (!screens.lobby.classList.contains('active') && data.newPlayer === myName) {
+                showScreen('lobby');
+                $('lobby-code').textContent = roomCode;
+            }
+            updateLobbyPlayers(data.players, isHost);
+            if (data.newPlayer !== myName) showToast(`${data.newPlayer} joined!`);
+            break;
 
-    // Style the card
-    const card = $('chit-card');
-    card.className = 'glass-panel chit-card ' + role.cssClass;
+        case 'join-error':
+            const errEl = $('join-error');
+            errEl.textContent = data;
+            errEl.classList.remove('hidden');
+            setTimeout(() => errEl.classList.add('hidden'), 4000);
+            break;
 
-    // Force re-animation
-    card.style.animation = 'none';
-    card.offsetHeight; // trigger reflow
-    card.style.animation = '';
+        case 'player-left':
+            updateLobbyPlayers(data.players, isHost);
+            showToast(`${data.leftPlayer} left the room`);
+            break;
 
-    $('pass-prompt').style.display = 'none';
-    $('chit-reveal').classList.remove('hidden');
-});
+        case 'game-started':
+            totalRounds = data.totalRounds;
+            showToast('Game started! 🎮');
+            break;
 
-$('btn-hide-chit').addEventListener('click', () => {
-    gameState.currentViewIndex++;
-    if (gameState.currentViewIndex < 4) {
-        showPassPrompt();
-    } else {
-        // All players have seen their chits — police guesses
-        showGuessScreen();
+        case 'new-round':
+            showScreen('role');
+            $('round-display').textContent = `${data.round} / ${data.totalRounds}`;
+            $('chit-emoji').textContent = data.yourRoleData.emoji;
+            $('chit-role').textContent = data.yourRoleData.name;
+            $('chit-role-tamil').textContent = data.yourRoleData.tamil;
+
+            if (data.yourRole === 'police') {
+                $('chit-points').textContent = 'Catch the Thief!';
+                $('role-hint').textContent = 'You are the Police! Get ready... 🕵️';
+            } else if (data.yourRole === 'thief') {
+                $('chit-points').textContent = "Don't get caught!";
+                $('role-hint').textContent = 'You are the Thief! Stay cool... 😈';
+            } else {
+                $('chit-points').textContent = data.yourRoleData.points + ' Points';
+                $('role-hint').textContent = 'Keep it secret! 🤫';
+            }
+
+            const card = $('chit-card');
+            card.className = 'glass-panel chit-card ' + data.yourRole + '-card';
+            card.style.animation = 'none';
+            card.offsetHeight;
+            card.style.animation = '';
+            break;
+
+        case 'police-turn':
+            if (myName === data.policeName) {
+                showScreen('guess');
+                $('guess-title').textContent = 'You are the Police!';
+                renderSuspects(data.suspects);
+            } else {
+                $('role-hint').textContent = `🛡️ ${data.policeName} is the Police! Waiting...`;
+            }
+            break;
+
+        case 'round-result':
+            showScreen('result');
+            const h = $('result-header');
+            h.className = 'result-header ' + (data.correct ? 'correct' : 'wrong');
+            $('result-icon').textContent = data.correct ? '✅' : '❌';
+            $('result-title').textContent = data.correct ? 'Thief Caught!' : 'Thief Escaped!';
+            $('result-subtitle').textContent = data.correct
+                ? `${data.policeName} caught ${data.thiefName}!`
+                : `${data.thiefName} escaped! ${data.policeName} arrested ${data.guessedName}!`;
+
+            const cardsContainer = $('result-cards');
+            cardsContainer.innerHTML = '';
+            Object.entries(data.revealData).forEach(([name, d]) => {
+                const c = document.createElement('div');
+                c.className = 'result-role-card ' + d.role;
+                c.innerHTML = `
+                    <div class="rr-emoji">${d.emoji}</div>
+                    <div class="rr-name">${name}</div>
+                    <div class="rr-role">${d.name} (${d.tamil})</div>
+                    <div class="rr-pts">+${d.roundPoints} pts</div>
+                `;
+                cardsContainer.appendChild(c);
+            });
+
+            const scoreTable = $('score-table');
+            scoreTable.innerHTML = '';
+            data.scores.forEach((s, i) => {
+                const row = document.createElement('div');
+                row.className = 'score-row';
+                row.innerHTML = `<span class="sr-rank">#${i + 1}</span><span class="sr-name">${s.name}</span><span class="sr-score">${s.score} pts</span>`;
+                scoreTable.appendChild(row);
+            });
+
+            const nextBtn = $('btn-next-round');
+            const waitingEl = $('waiting-next');
+            if (isHost) {
+                nextBtn.classList.remove('hidden');
+                nextBtn.textContent = data.isLastRound ? '🏆 Final Results' : 'Next Round →';
+                waitingEl.classList.add('hidden');
+            } else {
+                nextBtn.classList.add('hidden');
+                waitingEl.classList.remove('hidden');
+            }
+            break;
+
+        case 'game-over':
+            showScreen('final');
+            $('winner-text').textContent = `${data.scores[0].name} Wins! 🎉`;
+            const container = $('final-scores');
+            container.innerHTML = '';
+            const medals = ['🥇', '🥈', '🥉'];
+            data.scores.forEach((s, i) => {
+                const row = document.createElement('div');
+                row.className = 'final-row';
+                row.innerHTML = `<div class="final-rank">${medals[i] || (i + 1)}</div><div class="final-name">${s.name}</div><div class="final-score">${s.score} pts</div>`;
+                container.appendChild(row);
+            });
+            if (isHost) $('btn-play-again').classList.remove('hidden');
+            fireConfetti();
+            break;
     }
-});
+}
 
-// ===== GUESS SCREEN =====
-function showGuessScreen() {
-    showScreen('guess');
-    $('police-name').textContent = gameState.policePlayer;
+// ===== Helpers =====
+function updateLobbyPlayers(players, showStartBtn) {
+    const container = $('lobby-players');
+    container.innerHTML = '';
+    players.forEach((name, i) => {
+        const item = document.createElement('div');
+        item.className = 'player-item';
+        const initial = name.charAt(0).toUpperCase();
+        item.innerHTML = `
+            <div class="player-avatar">${initial}</div>
+            <div class="player-name">${name}</div>
+            ${i === 0 ? '<span class="host-badge">HOST</span>' : ''}
+        `;
+        container.appendChild(item);
+    });
 
+    $('player-count').textContent = `${players.length} / 10 players`;
+
+    if (players.length < 4) {
+        $('lobby-status').textContent = `Waiting for players... (need ${4 - players.length} more)`;
+    } else {
+        $('lobby-status').textContent = `✅ Ready to play! (${players.length} players)`;
+    }
+
+    // Show/hide start button
+    if (showStartBtn && players.length >= 4) {
+        $('btn-start-game').classList.remove('hidden');
+        $('lobby-note').textContent = '';
+    } else if (showStartBtn && players.length < 4) {
+        $('btn-start-game').classList.add('hidden');
+        $('lobby-note').textContent = 'Need at least 4 players to start';
+    } else {
+        $('btn-start-game').classList.add('hidden');
+        $('lobby-note').textContent = 'Only the host can start the game';
+    }
+}
+
+function updateHostButtons() {
+    // If on result screen, show next button
+    if (screens.result.classList.contains('active')) {
+        $('btn-next-round').classList.remove('hidden');
+        $('waiting-next').classList.add('hidden');
+    }
+    // If on final screen, show play again
+    if (screens.final.classList.contains('active')) {
+        $('btn-play-again').classList.remove('hidden');
+    }
+}
+
+function renderSuspects(suspects) {
     const suspectList = $('suspect-list');
     suspectList.innerHTML = '';
-    gameState.selectedSuspect = null;
+    selectedSuspect = null;
     $('btn-arrest').disabled = true;
 
-    // The suspects are all players except the police
-    const suspects = gameState.players.filter(p => p !== gameState.policePlayer);
     suspects.forEach(name => {
         const btn = document.createElement('button');
         btn.className = 'suspect-btn';
@@ -199,144 +577,12 @@ function showGuessScreen() {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.suspect-btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
-            gameState.selectedSuspect = name;
+            selectedSuspect = name;
             $('btn-arrest').disabled = false;
         });
         suspectList.appendChild(btn);
     });
 }
-
-$('btn-arrest').addEventListener('click', () => {
-    if (!gameState.selectedSuspect) return;
-    resolveRound();
-});
-
-// ===== RESOLVE ROUND =====
-function resolveRound() {
-    const correct = gameState.selectedSuspect === gameState.thiefPlayer;
-
-    // Calculate points
-    const roundPoints = {};
-    gameState.players.forEach(p => {
-        const role = gameState.roles[p];
-        if (role === 'king') {
-            roundPoints[p] = 1000;
-        } else if (role === 'queen') {
-            roundPoints[p] = 500;
-        } else if (role === 'police') {
-            roundPoints[p] = correct ? 800 : 0;
-        } else if (role === 'thief') {
-            roundPoints[p] = correct ? 0 : 800;
-        }
-    });
-
-    // Add to total scores
-    gameState.players.forEach(p => {
-        gameState.scores[p] += roundPoints[p];
-    });
-
-    // Show result
-    showResultScreen(correct, roundPoints);
-}
-
-function showResultScreen(correct, roundPoints) {
-    showScreen('result');
-
-    const header = $('result-header');
-    header.className = 'result-header ' + (correct ? 'correct' : 'wrong');
-
-    $('result-icon').textContent = correct ? '✅' : '❌';
-    $('result-title').textContent = correct ? 'Correct Guess!' : 'Wrong Guess!';
-    $('result-subtitle').textContent = correct
-        ? `${gameState.policePlayer} caught ${gameState.thiefPlayer}!`
-        : `${gameState.thiefPlayer} escaped! ${gameState.policePlayer} arrested ${gameState.selectedSuspect} (${ROLES[gameState.roles[gameState.selectedSuspect]].name}) instead!`;
-
-    // Result role cards
-    const cardsContainer = $('result-cards');
-    cardsContainer.innerHTML = '';
-    gameState.players.forEach(p => {
-        const roleKey = gameState.roles[p];
-        const role = ROLES[roleKey];
-        const card = document.createElement('div');
-        card.className = 'result-role-card ' + role.resultClass;
-        card.innerHTML = `
-            <div class="rr-emoji">${role.emoji}</div>
-            <div class="rr-name">${p}</div>
-            <div class="rr-role">${role.name} (${role.tamil})</div>
-            <div class="rr-pts">+${roundPoints[p]} pts</div>
-        `;
-        cardsContainer.appendChild(card);
-    });
-
-    // Score table
-    const scoreTable = $('score-table');
-    scoreTable.innerHTML = '';
-    const sorted = [...gameState.players].sort((a, b) => gameState.scores[b] - gameState.scores[a]);
-    sorted.forEach((p, i) => {
-        const row = document.createElement('div');
-        row.className = 'score-row';
-        row.innerHTML = `
-            <span class="sr-rank">#${i + 1}</span>
-            <span class="sr-name">${p}</span>
-            <span class="sr-score">${gameState.scores[p]} pts</span>
-        `;
-        scoreTable.appendChild(row);
-    });
-
-    // Update button text
-    const isLastRound = gameState.currentRound >= gameState.totalRounds;
-    $('btn-next-round').textContent = isLastRound ? '🏆 Final Results' : 'Next Round →';
-}
-
-$('btn-next-round').addEventListener('click', () => {
-    if (gameState.currentRound >= gameState.totalRounds) {
-        showFinalScreen();
-    } else {
-        startNewRound();
-    }
-});
-
-// ===== FINAL SCREEN =====
-function showFinalScreen() {
-    showScreen('final');
-
-    const sorted = [...gameState.players].sort((a, b) => gameState.scores[b] - gameState.scores[a]);
-    $('winner-text').textContent = `${sorted[0]} Wins! 🎉`;
-
-    const container = $('final-scores');
-    container.innerHTML = '';
-    sorted.forEach((p, i) => {
-        const row = document.createElement('div');
-        row.className = 'final-row';
-        const medals = ['🥇', '🥈', '🥉', '  '];
-        row.innerHTML = `
-            <div class="final-rank">${medals[i] || (i + 1)}</div>
-            <div class="final-name">${p}</div>
-            <div class="final-score">${gameState.scores[p]} pts</div>
-        `;
-        container.appendChild(row);
-    });
-
-    // Fire confetti
-    fireConfetti();
-}
-
-$('btn-play-again').addEventListener('click', () => {
-    // Reset scores, keep same players and settings
-    gameState.players.forEach(p => gameState.scores[p] = 0);
-    gameState.currentRound = 0;
-    clearConfetti();
-    startNewRound();
-});
-
-$('btn-new-game').addEventListener('click', () => {
-    clearConfetti();
-    // Clear inputs
-    for (let i = 1; i <= 4; i++) {
-        $('player' + i).value = '';
-    }
-    showScreen('welcome');
-});
 
 // ===== CONFETTI =====
 let confettiPieces = [];
@@ -347,55 +593,34 @@ function fireConfetti() {
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-
     const colors = ['#ffd700', '#ff6b6b', '#7b61ff', '#4cc9f0', '#f72585', '#06d6a0', '#c77dff'];
     confettiPieces = [];
-
     for (let i = 0; i < 150; i++) {
         confettiPieces.push({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height - canvas.height,
-            w: 6 + Math.random() * 6,
-            h: 4 + Math.random() * 4,
+            w: 6 + Math.random() * 6, h: 4 + Math.random() * 4,
             color: colors[Math.floor(Math.random() * colors.length)],
-            vx: (Math.random() - 0.5) * 3,
-            vy: 2 + Math.random() * 4,
-            rot: Math.random() * 360,
-            rotSpeed: (Math.random() - 0.5) * 10,
-            opacity: 1
+            vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 4,
+            rot: Math.random() * 360, rotSpeed: (Math.random() - 0.5) * 10, opacity: 1
         });
     }
-
     function animate() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         let alive = false;
         confettiPieces.forEach(p => {
-            p.x += p.vx;
-            p.y += p.vy;
-            p.rot += p.rotSpeed;
-            p.vy += 0.05;
-
-            if (p.y > canvas.height + 20) {
-                p.opacity -= 0.02;
-            }
-
+            p.x += p.vx; p.y += p.vy; p.rot += p.rotSpeed; p.vy += 0.05;
+            if (p.y > canvas.height + 20) p.opacity -= 0.02;
             if (p.opacity > 0) {
                 alive = true;
-                ctx.save();
-                ctx.globalAlpha = Math.max(0, p.opacity);
-                ctx.translate(p.x, p.y);
-                ctx.rotate(p.rot * Math.PI / 180);
-                ctx.fillStyle = p.color;
-                ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+                ctx.save(); ctx.globalAlpha = Math.max(0, p.opacity);
+                ctx.translate(p.x, p.y); ctx.rotate(p.rot * Math.PI / 180);
+                ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
                 ctx.restore();
             }
         });
-
-        if (alive) {
-            confettiAnimId = requestAnimationFrame(animate);
-        }
+        if (alive) confettiAnimId = requestAnimationFrame(animate);
     }
-
     animate();
 }
 
@@ -406,9 +631,3 @@ function clearConfetti() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     confettiPieces = [];
 }
-
-// ===== Init =====
-createParticles();
-window.addEventListener('resize', () => {
-    createParticles();
-});
