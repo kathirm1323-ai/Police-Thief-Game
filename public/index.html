@@ -193,7 +193,7 @@
             </div>
             <div class="input-group">
                 <label for="join-code">Room Code</label>
-                <input type="text" id="join-code" placeholder="Enter 5-letter code..." maxlength="5" autocomplete="off" class="code-input">
+                <input type="text" id="join-code" placeholder="Enter Room Code..." autocomplete="off" class="code-input">
             </div>
             <div class="setup-actions">
                 <button class="btn btn-ghost" id="btn-back-join">← Back</button>
@@ -297,7 +297,7 @@
 
     <canvas id="confetti-canvas"></canvas>
 
-    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
     <script>
         if ('serviceWorker' in navigator) {

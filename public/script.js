@@ -1,13 +1,20 @@
-// ===== Socket.IO Connection =====
-const BACKEND_URL = ''; // Leave blank to use host origin, or update to your Render URL
-const socket = io(BACKEND_URL);
-
+// ===== PeerJS Connection =====
+let peer = new Peer();
+let conn = null; // Connection to host (if client)
+let connections = {}; // Connections to clients (if host)
+let myPlayerId = null;
 
 let myName = '';
 let roomCode = '';
 let isHost = false;
 let selectedSuspect = null;
 let totalRounds = 10;
+let players = []; // List of player names
+let scores = {}; // { playerName: score }
+let roles = {}; // { playerName: roleKey }
+let currentRound = 0;
+let phase = 'lobby'; // lobby | viewing | guessing | result
+
 
 const $ = id => document.getElementById(id);
 const screens = {
@@ -53,6 +60,45 @@ function createParticles() {
 createParticles();
 window.addEventListener('resize', createParticles);
 
+// ===== Peer Setup =====
+peer.on('open', (id) => {
+    myPlayerId = id;
+    console.log('My Peer ID: ' + id);
+});
+
+peer.on('error', (err) => {
+    console.error('Peer error:', err);
+    if (err.type === 'peer-unavailable') {
+        showToast('Room not found! Check the code.');
+    } else {
+        showToast('Connection error. Please try again.');
+    }
+});
+
+// Host listener (for connections from clients)
+peer.on('connection', (c) => {
+    c.on('open', () => {
+        // A client has connected to the host
+        c.on('data', (payload) => {
+            handleHostEvent(payload.type, payload.data, c);
+        });
+        c.on('close', () => {
+            handleHostPlayerDisconnect(c);
+        });
+    });
+});
+
+// Client listener (for data from the host)
+function setupClientConnection(c) {
+    c.on('data', (payload) => {
+        handleClientEvent(payload.type, payload.data);
+    });
+    c.on('close', () => {
+        showToast('Host disconnected.');
+        setTimeout(() => window.location.reload(), 3000);
+    });
+}
+
 // ===== WELCOME SCREEN =====
 $('btn-create').addEventListener('click', () => showScreen('create'));
 $('btn-join').addEventListener('click', () => showScreen('join'));
@@ -76,19 +122,36 @@ $('btn-create-room').addEventListener('click', () => {
     if (!name) { $('create-name').focus(); return; }
     myName = name;
     isHost = true;
-    socket.emit('create-room', { playerName: name, totalRounds });
+    
+    // In P2P, the room code is simply the Host's Peer ID
+    // We'll use the Peer ID assigned by PeerJS (e.g. 5 random chars)
+    roomCode = myPlayerId.substring(0, 5).toUpperCase();
+    
+    // Since we need to use this specific ID for others to join, 
+    // we should have ideally requested a custom ID. 
+    // Let's re-initialize with a 5-char ID if possible, but PeerJS free tier
+    // might have conflicts. Let's just use the assigned ID.
+    roomCode = myPlayerId; 
+    
+    handleHostEvent('create-room', { playerName: name, totalRounds });
 });
 
 // ===== JOIN ROOM =====
 $('btn-back-join').addEventListener('click', () => showScreen('welcome'));
 $('btn-join-room').addEventListener('click', () => {
     const name = $('join-name').value.trim();
-    const code = $('join-code').value.trim().toUpperCase();
+    const code = $('join-code').value.trim(); // Code is the host's Peer ID
     if (!name) { $('join-name').focus(); return; }
-    if (!code || code.length < 5) { $('join-code').focus(); return; }
+    if (!code) { $('join-code').focus(); return; }
+    
     myName = name;
     roomCode = code;
-    socket.emit('join-room', { roomCode: code, playerName: name });
+    
+    conn = peer.connect(code);
+    conn.on('open', () => {
+        setupClientConnection(conn);
+        conn.send({ type: 'join-room', data: { playerName: name } });
+    });
 });
 
 // ===== LOBBY =====
@@ -97,25 +160,29 @@ $('btn-copy-code').addEventListener('click', () => {
 });
 
 $('btn-start-game').addEventListener('click', () => {
-    socket.emit('start-game');
+    if (isHost) handleHostEvent('start-game');
 });
 
 // ===== GUESS =====
 $('btn-arrest').addEventListener('click', () => {
     if (!selectedSuspect) return;
     $('btn-arrest').disabled = true;
-    socket.emit('police-guess', { suspectName: selectedSuspect });
+    if (isHost) {
+        handleHostEvent('police-guess', { suspectName: selectedSuspect });
+    } else {
+        conn.send({ type: 'police-guess', data: { suspectName: selectedSuspect } });
+    }
 });
 
 // ===== NEXT ROUND =====
 $('btn-next-round').addEventListener('click', () => {
-    socket.emit('next-round');
+    if (isHost) handleHostEvent('next-round');
 });
 
 // ===== PLAY AGAIN & NEW GAME =====
 $('btn-play-again').addEventListener('click', () => {
     clearConfetti();
-    socket.emit('play-again');
+    if (isHost) handleHostEvent('play-again');
 });
 $('btn-new-game').addEventListener('click', () => {
     clearConfetti();
@@ -123,176 +190,327 @@ $('btn-new-game').addEventListener('click', () => {
 });
 
 // ========================================
-//         SOCKET EVENT HANDLERS
+//         P2P EVENT HANDLERS
 // ========================================
 
-socket.on('room-created', ({ code, players }) => {
-    roomCode = code;
-    showScreen('lobby');
-    $('lobby-code').textContent = code;
-    updateLobbyPlayers(players, true);
-});
+const ALL_ROLES = {
+    king:     { emoji: '👑', name: 'Raja',      tamil: 'ராஜா',          points: 1000 },
+    queen:    { emoji: '💎', name: 'Rani',      tamil: 'ராணி',          points: 500  },
+    minister: { emoji: '📜', name: 'Minister',  tamil: 'மந்திரி',      points: 400  },
+    police:   { emoji: '🛡️', name: 'Police',    tamil: 'போலீஸ்',       points: 0    },
+    thief:    { emoji: '🦹', name: 'Thirudan',  tamil: 'திருடன்',   points: 0    },
+    doctor:   { emoji: '👨‍⚕️', name: 'Doctor',    tamil: 'மருத்துவர்', points: 350  },
+    teacher:  { emoji: '👨‍🏫', name: 'Teacher',   tamil: 'ஆசிரியர்',   points: 300  },
+    milkman:  { emoji: '🥛', name: 'Milkman',   tamil: 'பால்காரன்',  points: 200  },
+    gardener: { emoji: '🌺', name: 'Gardener',  tamil: 'தோட்டக்காரன்', points: 250  },
+    farmer:   { emoji: '👨‍🌾', name: 'Farmer',    tamil: 'விவசாயி',     points: 200  }
+};
 
-socket.on('player-joined', ({ players, newPlayer }) => {
-    if (!screens.lobby.classList.contains('active') && newPlayer === myName) {
-        showScreen('lobby');
-        $('lobby-code').textContent = roomCode;
+const ROLE_PRIORITY = ['king', 'police', 'thief', 'queen', 'minister', 'doctor', 'teacher', 'gardener', 'milkman', 'farmer'];
+
+function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
     }
-    updateLobbyPlayers(players, isHost);
-    if (newPlayer !== myName) showToast(`${newPlayer} joined!`);
-});
+    return a;
+}
 
-socket.on('join-error', (msg) => {
-    const errEl = $('join-error');
-    errEl.textContent = msg;
-    errEl.classList.remove('hidden');
-    setTimeout(() => errEl.classList.add('hidden'), 4000);
-});
+// --- HOST LOGIC (Central Brain) ---
+function handleHostEvent(type, data, clientConn) {
+    if (!isHost) return;
 
-socket.on('player-left', ({ players, leftPlayer }) => {
-    updateLobbyPlayers(players, isHost);
-    showToast(`${leftPlayer} left the room`);
-});
+    switch (type) {
+        case 'create-room':
+            players = [{ name: data.playerName, conn: null, id: 'host' }];
+            scores = { [data.playerName]: 0 };
+            totalRounds = data.totalRounds;
+            currentRound = 0;
+            phase = 'lobby';
+            handleClientEvent('room-created', { code: roomCode, players: [data.playerName] });
+            break;
 
-socket.on('you-are-host', () => {
-    isHost = true;
-    showToast('You are now the host!');
-    // Update lobby if visible
-    const playerEls = $('lobby-players');
-    if (playerEls.children.length > 0) {
-        const lobbyPlayers = Array.from(playerEls.children).map(el => el.querySelector('.player-name').textContent);
-        updateLobbyPlayers(lobbyPlayers, true);
+        case 'join-room':
+            if (phase !== 'lobby') {
+                clientConn.send({ type: 'join-error', data: 'Game already in progress!' });
+                return;
+            }
+            if (players.length >= 10) {
+                clientConn.send({ type: 'join-error', data: 'Room is full!' });
+                return;
+            }
+            if (players.some(p => p.name.toLowerCase() === data.playerName.toLowerCase())) {
+                clientConn.send({ type: 'join-error', data: 'Name already taken!' });
+                return;
+            }
+
+            // Register new player
+            players.push({ name: data.playerName, conn: clientConn, id: clientConn.peer });
+            connections[clientConn.peer] = clientConn;
+            scores[data.playerName] = 0;
+            
+            const playerNames = players.map(p => p.name);
+            broadcastToAll('player-joined', { players: playerNames, newPlayer: data.playerName });
+            break;
+
+        case 'start-game':
+            if (players.length < 4) {
+                showToast('Need at least 4 players!');
+                return;
+            }
+            phase = 'playing';
+            currentRound = 0;
+            players.forEach(p => scores[p.name] = 0);
+            broadcastToAll('game-started', { totalRounds });
+            startNextRoundP2P();
+            break;
+
+        case 'police-guess':
+            const policePlayer = players.find(p => roles[p.name] === 'police');
+            const thiefPlayer = players.find(p => roles[p.name] === 'thief');
+            const correct = data.suspectName === thiefPlayer.name;
+
+            const roundPoints = {};
+            players.forEach(p => {
+                const role = roles[p.name];
+                if (role === 'police') roundPoints[p.name] = correct ? 800 : 0;
+                else if (role === 'thief') roundPoints[p.name] = correct ? 0 : 800;
+                else roundPoints[p.name] = ALL_ROLES[role].points;
+                scores[p.name] += roundPoints[p.name];
+            });
+
+            const revealData = {};
+            players.forEach(p => {
+                const r = roles[p.name];
+                revealData[p.name] = { 
+                    role: r, 
+                    ...ALL_ROLES[r], 
+                    roundPoints: roundPoints[p.name] 
+                };
+            });
+
+            const sortedScores = players.map(p => ({ name: p.name, score: scores[p.name] }))
+                                        .sort((a, b) => b.score - a.score);
+            
+            phase = 'result';
+            broadcastToAll('round-result', {
+                correct,
+                policeName: policePlayer.name,
+                thiefName: thiefPlayer.name,
+                guessedName: data.suspectName,
+                revealData,
+                scores: sortedScores,
+                isLastRound: currentRound >= totalRounds
+            });
+            break;
+
+        case 'next-round':
+            if (currentRound >= totalRounds) {
+                const finalScores = players.map(p => ({ name: p.name, score: scores[p.name] }))
+                                            .sort((a, b) => b.score - a.score);
+                broadcastToAll('game-over', { scores: finalScores });
+            } else {
+                startNextRoundP2P();
+            }
+            break;
+
+        case 'play-again':
+            players.forEach(p => scores[p.name] = 0);
+            currentRound = 0;
+            broadcastToAll('game-started', { totalRounds });
+            startNextRoundP2P();
+            break;
     }
-    // Show start button if on appropriate screen
-    updateHostButtons();
-});
+}
 
-socket.on('game-started', ({ totalRounds: tr }) => {
-    totalRounds = tr;
-    showToast('Game started! 🎮');
-});
+function startNextRoundP2P() {
+    currentRound++;
+    phase = 'viewing';
+    
+    const roleKeys = ROLE_PRIORITY.slice(0, players.length);
+    const shuffled = shuffle(roleKeys);
+    roles = {};
+    players.forEach((p, i) => roles[p.name] = shuffled[i]);
 
-socket.on('new-round', ({ round, totalRounds: tr, yourRole, yourRoleData, policeName, isPolice, players }) => {
-    showScreen('role');
-    $('round-display').textContent = `${round} / ${tr}`;
+    const police = players.find(p => roles[p.name] === 'police');
 
-    // Show your role card
-    $('chit-emoji').textContent = yourRoleData.emoji;
-    $('chit-role').textContent = yourRoleData.name;
-    $('chit-role-tamil').textContent = yourRoleData.tamil;
-
-    if (yourRole === 'police') {
-        $('chit-points').textContent = 'Catch the Thief!';
-        $('role-hint').textContent = 'You are the Police! Get ready to guess... 🕵️';
-    } else if (yourRole === 'thief') {
-        $('chit-points').textContent = "Don't get caught!";
-        $('role-hint').textContent = 'You are the Thief! Stay cool... 😈';
-    } else {
-        $('chit-points').textContent = yourRoleData.points + ' Points';
-        $('role-hint').textContent = 'Keep it secret! 🤫';
-    }
-
-    const card = $('chit-card');
-    card.className = 'glass-panel chit-card ' + yourRole + '-card';
-    card.style.animation = 'none';
-    card.offsetHeight;
-    card.style.animation = '';
-});
-
-socket.on('police-turn', ({ policeName, suspects }) => {
-    if (myName === policeName) {
-        // I am the police — show guess screen
-        showScreen('guess');
-        $('guess-title').textContent = 'You are the Police!';
-        $('guess-instruction').textContent = 'Who is the Thirudan? Choose wisely!';
-        renderSuspects(suspects);
-    } else {
-        // Others wait — update hint on role screen
-        $('role-hint').textContent = `🛡️ ${policeName} is the Police! Waiting for their guess...`;
-    }
-});
-
-socket.on('round-result', ({ correct, policeName, thiefName, guessedName, revealData, scores, isLastRound }) => {
-    showScreen('result');
-
-    const header = $('result-header');
-    header.className = 'result-header ' + (correct ? 'correct' : 'wrong');
-
-    $('result-icon').textContent = correct ? '✅' : '❌';
-    $('result-title').textContent = correct ? 'Thief Caught!' : 'Thief Escaped!';
-    $('result-subtitle').textContent = correct
-        ? `${policeName} caught ${thiefName}!`
-        : `${thiefName} escaped! ${policeName} arrested ${guessedName} instead!`;
-
-    // Result cards
-    const cardsContainer = $('result-cards');
-    cardsContainer.innerHTML = '';
-    Object.entries(revealData).forEach(([name, data]) => {
-        const card = document.createElement('div');
-        card.className = 'result-role-card ' + data.role;
-        card.innerHTML = `
-            <div class="rr-emoji">${data.emoji}</div>
-            <div class="rr-name">${name}</div>
-            <div class="rr-role">${data.name} (${data.tamil})</div>
-            <div class="rr-pts">+${data.roundPoints} pts</div>
-        `;
-        cardsContainer.appendChild(card);
+    // Inform each player individually
+    players.forEach(p => {
+        const payload = {
+            round: currentRound,
+            totalRounds,
+            yourRole: roles[p.name],
+            yourRoleData: ALL_ROLES[roles[p.name]],
+            policeName: police.name,
+            players: players.map(pl => pl.name)
+        };
+        if (p.id === 'host') {
+            handleClientEvent('new-round', payload);
+        } else {
+            p.conn.send({ type: 'new-round', data: payload });
+        }
     });
 
-    // Scoreboard
-    const scoreTable = $('score-table');
-    scoreTable.innerHTML = '';
-    scores.forEach((s, i) => {
-        const row = document.createElement('div');
-        row.className = 'score-row';
-        row.innerHTML = `
-            <span class="sr-rank">#${i + 1}</span>
-            <span class="sr-name">${s.name}</span>
-            <span class="sr-score">${s.score} pts</span>
-        `;
-        scoreTable.appendChild(row);
+    // Transit to guessing after delay
+    setTimeout(() => {
+        phase = 'guessing';
+        broadcastToAll('police-turn', {
+            policeName: police.name,
+            suspects: players.filter(p => roles[p.name] !== 'police').map(p => p.name)
+        });
+    }, 6000);
+}
+
+function broadcastToAll(type, data) {
+    players.forEach(p => {
+        if (p.id === 'host') handleClientEvent(type, data);
+        else if (p.conn) p.conn.send({ type, data });
     });
+}
 
-    // Show buttons based on host
-    const nextBtn = $('btn-next-round');
-    const waitingEl = $('waiting-next');
-    if (isHost) {
-        nextBtn.classList.remove('hidden');
-        nextBtn.textContent = isLastRound ? '🏆 Final Results' : 'Next Round →';
-        waitingEl.classList.add('hidden');
-    } else {
-        nextBtn.classList.add('hidden');
-        waitingEl.classList.remove('hidden');
-        waitingEl.textContent = isLastRound
-            ? 'Waiting for host to show final results...'
-            : 'Waiting for host to start next round...';
+function handleHostPlayerDisconnect(conn) {
+    const p = players.find(player => player.id === conn.peer);
+    if (!p) return;
+    const leaveName = p.name;
+    players = players.filter(player => player.id !== conn.peer);
+    delete connections[conn.peer];
+    broadcastToAll('player-left', { players: players.map(pl => pl.name), leftPlayer: leaveName });
+}
+
+// --- CLIENT LOGIC (UI Updates) ---
+function handleClientEvent(type, data) {
+    switch (type) {
+        case 'room-created':
+            roomCode = data.code;
+            showScreen('lobby');
+            $('lobby-code').textContent = data.code;
+            updateLobbyPlayers(data.players, true);
+            break;
+
+        case 'player-joined':
+            if (!screens.lobby.classList.contains('active') && data.newPlayer === myName) {
+                showScreen('lobby');
+                $('lobby-code').textContent = roomCode;
+            }
+            updateLobbyPlayers(data.players, isHost);
+            if (data.newPlayer !== myName) showToast(`${data.newPlayer} joined!`);
+            break;
+
+        case 'join-error':
+            const errEl = $('join-error');
+            errEl.textContent = data;
+            errEl.classList.remove('hidden');
+            setTimeout(() => errEl.classList.add('hidden'), 4000);
+            break;
+
+        case 'player-left':
+            updateLobbyPlayers(data.players, isHost);
+            showToast(`${data.leftPlayer} left the room`);
+            break;
+
+        case 'game-started':
+            totalRounds = data.totalRounds;
+            showToast('Game started! 🎮');
+            break;
+
+        case 'new-round':
+            showScreen('role');
+            $('round-display').textContent = `${data.round} / ${data.totalRounds}`;
+            $('chit-emoji').textContent = data.yourRoleData.emoji;
+            $('chit-role').textContent = data.yourRoleData.name;
+            $('chit-role-tamil').textContent = data.yourRoleData.tamil;
+
+            if (data.yourRole === 'police') {
+                $('chit-points').textContent = 'Catch the Thief!';
+                $('role-hint').textContent = 'You are the Police! Get ready... 🕵️';
+            } else if (data.yourRole === 'thief') {
+                $('chit-points').textContent = "Don't get caught!";
+                $('role-hint').textContent = 'You are the Thief! Stay cool... 😈';
+            } else {
+                $('chit-points').textContent = data.yourRoleData.points + ' Points';
+                $('role-hint').textContent = 'Keep it secret! 🤫';
+            }
+
+            const card = $('chit-card');
+            card.className = 'glass-panel chit-card ' + data.yourRole + '-card';
+            card.style.animation = 'none';
+            card.offsetHeight;
+            card.style.animation = '';
+            break;
+
+        case 'police-turn':
+            if (myName === data.policeName) {
+                showScreen('guess');
+                $('guess-title').textContent = 'You are the Police!';
+                renderSuspects(data.suspects);
+            } else {
+                $('role-hint').textContent = `🛡️ ${data.policeName} is the Police! Waiting...`;
+            }
+            break;
+
+        case 'round-result':
+            showScreen('result');
+            const h = $('result-header');
+            h.className = 'result-header ' + (data.correct ? 'correct' : 'wrong');
+            $('result-icon').textContent = data.correct ? '✅' : '❌';
+            $('result-title').textContent = data.correct ? 'Thief Caught!' : 'Thief Escaped!';
+            $('result-subtitle').textContent = data.correct
+                ? `${data.policeName} caught ${data.thiefName}!`
+                : `${data.thiefName} escaped! ${data.policeName} arrested ${data.guessedName}!`;
+
+            const cardsContainer = $('result-cards');
+            cardsContainer.innerHTML = '';
+            Object.entries(data.revealData).forEach(([name, d]) => {
+                const c = document.createElement('div');
+                c.className = 'result-role-card ' + d.role;
+                c.innerHTML = `
+                    <div class="rr-emoji">${d.emoji}</div>
+                    <div class="rr-name">${name}</div>
+                    <div class="rr-role">${d.name} (${d.tamil})</div>
+                    <div class="rr-pts">+${d.roundPoints} pts</div>
+                `;
+                cardsContainer.appendChild(c);
+            });
+
+            const scoreTable = $('score-table');
+            scoreTable.innerHTML = '';
+            data.scores.forEach((s, i) => {
+                const row = document.createElement('div');
+                row.className = 'score-row';
+                row.innerHTML = `<span class="sr-rank">#${i + 1}</span><span class="sr-name">${s.name}</span><span class="sr-score">${s.score} pts</span>`;
+                scoreTable.appendChild(row);
+            });
+
+            const nextBtn = $('btn-next-round');
+            const waitingEl = $('waiting-next');
+            if (isHost) {
+                nextBtn.classList.remove('hidden');
+                nextBtn.textContent = data.isLastRound ? '🏆 Final Results' : 'Next Round →';
+                waitingEl.classList.add('hidden');
+            } else {
+                nextBtn.classList.add('hidden');
+                waitingEl.classList.remove('hidden');
+            }
+            break;
+
+        case 'game-over':
+            showScreen('final');
+            $('winner-text').textContent = `${data.scores[0].name} Wins! 🎉`;
+            const container = $('final-scores');
+            container.innerHTML = '';
+            const medals = ['🥇', '🥈', '🥉'];
+            data.scores.forEach((s, i) => {
+                const row = document.createElement('div');
+                row.className = 'final-row';
+                row.innerHTML = `<div class="final-rank">${medals[i] || (i + 1)}</div><div class="final-name">${s.name}</div><div class="final-score">${s.score} pts</div>`;
+                container.appendChild(row);
+            });
+            if (isHost) $('btn-play-again').classList.remove('hidden');
+            fireConfetti();
+            break;
     }
-});
-
-socket.on('game-over', ({ scores }) => {
-    showScreen('final');
-    $('winner-text').textContent = `${scores[0].name} Wins! 🎉`;
-
-    const container = $('final-scores');
-    container.innerHTML = '';
-    const medals = ['🥇', '🥈', '🥉'];
-    scores.forEach((s, i) => {
-        const row = document.createElement('div');
-        row.className = 'final-row';
-        row.innerHTML = `
-            <div class="final-rank">${medals[i] || (i + 1)}</div>
-            <div class="final-name">${s.name}</div>
-            <div class="final-score">${s.score} pts</div>
-        `;
-        container.appendChild(row);
-    });
-
-    if (isHost) {
-        $('btn-play-again').classList.remove('hidden');
-    }
-
-    fireConfetti();
-});
+}
 
 // ===== Helpers =====
 function updateLobbyPlayers(players, showStartBtn) {
