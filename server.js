@@ -20,11 +20,16 @@ const ALL_ROLES = {
     teacher:  { emoji: '👨‍🏫', name: 'Teacher',   tamil: 'ஆசிரியர்',   points: 300  },
     milkman:  { emoji: '🥛', name: 'Milkman',   tamil: 'பால்காரன்',  points: 200  },
     gardener: { emoji: '🌺', name: 'Gardener',  tamil: 'தோட்டக்காரன்', points: 250  },
-    farmer:   { emoji: '👨‍🌾', name: 'Farmer',    tamil: 'விவசாயி',     points: 200  }
+    farmer:   { emoji: '👨‍🌾', name: 'Farmer',    tamil: 'விவசாயி',     points: 200  },
+    merchant: { emoji: '💰', name: 'Merchant',  tamil: 'வணிகர்',     points: 450  },
+    soldier:  { emoji: '💂', name: 'Soldier',   tamil: 'சேவகன்',     points: 150  },
+    priest:   { emoji: '🪔', name: 'Priest',    tamil: 'பூசாரி',      points: 300  },
+    artist:   { emoji: '🎨', name: 'Artist',    tamil: 'ஓவியர்',      points: 250  },
+    guard:    { emoji: '🔦', name: 'Guard',     tamil: 'காவலர்',      points: 200  }
 };
 
 // Order of roles to pick (king, police, thief always first, then fill)
-const ROLE_PRIORITY = ['king', 'police', 'thief', 'queen', 'minister', 'doctor', 'teacher', 'gardener', 'milkman', 'farmer'];
+const ROLE_PRIORITY = ['king', 'police', 'thief', 'queen', 'minister', 'doctor', 'teacher', 'merchant', 'priest', 'gardener', 'artist', 'milkman', 'farmer', 'guard', 'soldier'];
 
 // ===== Rooms =====
 const rooms = {};

@@ -12,6 +12,7 @@ let scores = {};
 let roles = {};
 let currentRound = 0;
 let phase = 'lobby';
+let autoPickTimeout = null;
 
 // ===== UI Helpers =====
 const $ = id => document.getElementById(id);
@@ -167,7 +168,18 @@ socket.on('game-started', (data) => {
 
 socket.on('new-round', (data) => {
     showScreen('role');
+    
+    // Clear any existing autopick timer
+    if (autoPickTimeout) clearTimeout(autoPickTimeout);
+
     $('round-display').textContent = `${data.round} / ${data.totalRounds}`;
+    
+    // Setup Picking Phase
+    $('picking-phase').classList.remove('hidden');
+    $('reveal-phase').classList.add('hidden');
+    renderChitPicker(data.players.length, data);
+
+    // Setup Reveal Phase (for later)
     $('chit-emoji').textContent = data.yourRoleData.emoji;
     $('chit-role').textContent = data.yourRoleData.name;
     $('chit-role-tamil').textContent = data.yourRoleData.tamil;
@@ -185,11 +197,48 @@ socket.on('new-round', (data) => {
 
     const card = $('chit-card');
     card.className = 'glass-panel chit-card ' + data.yourRole + '-card';
-    // Small hack to restart CSS animation
     card.style.animation = 'none';
-    card.offsetHeight;
-    card.style.animation = '';
 });
+
+function renderChitPicker(count, gameData) {
+    const grid = $('chit-grid');
+    grid.innerHTML = '';
+    
+    for (let i = 0; i < count; i++) {
+        const chit = document.createElement('div');
+        chit.className = 'selectable-chit';
+        chit.innerHTML = '❓';
+        chit.style.animationDelay = (i * 0.1) + 's';
+        chit.onclick = () => pickChit(i, gameData);
+        grid.appendChild(chit);
+    }
+
+    // Auto-pick the first one after 3 seconds
+    autoPickTimeout = setTimeout(() => {
+        const firstChit = grid.querySelector('.selectable-chit');
+        if (firstChit) pickChit(0, gameData);
+    }, 3000);
+}
+
+function pickChit(index, data) {
+    if (autoPickTimeout) clearTimeout(autoPickTimeout);
+    autoPickTimeout = null;
+
+    const chits = document.querySelectorAll('.selectable-chit');
+    if (chits[index]) chits[index].classList.add('picked');
+
+    // Small delay for the "picking" animation
+    setTimeout(() => {
+        $('picking-phase').classList.add('hidden');
+        $('reveal-phase').classList.remove('hidden');
+        
+        const card = $('chit-card');
+        card.offsetHeight; // Reset animation
+        card.style.animation = '';
+        
+        showToast('Role Revealed! 🕵️');
+    }, 400);
+}
 
 socket.on('police-turn', (data) => {
     if (myName === data.policeName) {
