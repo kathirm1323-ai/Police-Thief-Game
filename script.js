@@ -1,7 +1,7 @@
 // ===== PeerJS Connection =====
-let peer = new Peer();
-let conn = null; // Connection to host (if client)
-let connections = {}; // Connections to clients (if host)
+let peer = new Peer(); // Initial anonymous peer
+let conn = null;
+let connections = {};
 let myPlayerId = null;
 
 let myName = '';
@@ -9,11 +9,18 @@ let roomCode = '';
 let isHost = false;
 let selectedSuspect = null;
 let totalRounds = 10;
-let players = []; // List of player names
-let scores = {}; // { playerName: score }
-let roles = {}; // { playerName: roleKey }
+let players = [];
+let scores = {};
+let roles = {};
 let currentRound = 0;
-let phase = 'lobby'; // lobby | viewing | guessing | result
+let phase = 'lobby';
+
+function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+}
 
 
 const $ = id => document.getElementById(id);
@@ -61,34 +68,33 @@ createParticles();
 window.addEventListener('resize', createParticles);
 
 // ===== Peer Setup =====
-peer.on('open', (id) => {
-    myPlayerId = id;
-    console.log('My Peer ID: ' + id);
-});
+function setupPeerListeners(p) {
+    p.on('open', (id) => {
+        myPlayerId = id;
+        console.log('My Peer ID: ' + id);
+    });
 
-peer.on('error', (err) => {
-    console.error('Peer error:', err);
-    if (err.type === 'peer-unavailable') {
-        showToast('Room not found! Check the code.');
-    } else {
-        showToast('Connection error. Please try again.');
-    }
-});
+    p.on('error', (err) => {
+        console.error('Peer error:', err);
+        if (err.type === 'peer-unavailable') {
+            showToast('Room not found! Check the code.');
+        } else if (err.type === 'unavailable-id') {
+            if (isHost) tryCreateHostRoom(); // Retry with new code if taken
+        } else {
+            showToast('Connection error. Please try again.');
+        }
+    });
 
-// Host listener (for connections from clients)
-peer.on('connection', (c) => {
-    c.on('open', () => {
-        // A client has connected to the host
-        c.on('data', (payload) => {
-            handleHostEvent(payload.type, payload.data, c);
-        });
-        c.on('close', () => {
-            handleHostPlayerDisconnect(c);
+    p.on('connection', (c) => {
+        c.on('open', () => {
+            c.on('data', (payload) => handleHostEvent(payload.type, payload.data, c));
+            c.on('close', () => handleHostPlayerDisconnect(c));
         });
     });
-});
+}
+setupPeerListeners(peer);
 
-// Client listener (for data from the host)
+// Client listener
 function setupClientConnection(c) {
     c.on('data', (payload) => {
         handleClientEvent(payload.type, payload.data);
@@ -122,25 +128,25 @@ $('btn-create-room').addEventListener('click', () => {
     if (!name) { $('create-name').focus(); return; }
     myName = name;
     isHost = true;
-    
-    // In P2P, the room code is simply the Host's Peer ID
-    // We'll use the Peer ID assigned by PeerJS (e.g. 5 random chars)
-    roomCode = myPlayerId.substring(0, 5).toUpperCase();
-    
-    // Since we need to use this specific ID for others to join, 
-    // we should have ideally requested a custom ID. 
-    // Let's re-initialize with a 5-char ID if possible, but PeerJS free tier
-    // might have conflicts. Let's just use the assigned ID.
-    roomCode = myPlayerId; 
-    
-    handleHostEvent('create-room', { playerName: name, totalRounds });
+    tryCreateHostRoom();
 });
+
+function tryCreateHostRoom() {
+    const code = generateRoomCode();
+    if (peer) peer.destroy();
+    peer = new Peer(code);
+    setupPeerListeners(peer);
+    peer.on('open', (id) => {
+        roomCode = id;
+        handleHostEvent('create-room', { playerName: myName, totalRounds });
+    });
+}
 
 // ===== JOIN ROOM =====
 $('btn-back-join').addEventListener('click', () => showScreen('welcome'));
 $('btn-join-room').addEventListener('click', () => {
     const name = $('join-name').value.trim();
-    const code = $('join-code').value.trim(); // Code is the host's Peer ID
+    const code = $('join-code').value.trim().toUpperCase();
     if (!name) { $('join-name').focus(); return; }
     if (!code) { $('join-code').focus(); return; }
     
