@@ -213,11 +213,11 @@ function renderChitPicker(count, gameData) {
         grid.appendChild(chit);
     }
 
-    // Auto-pick the first one after 3 seconds
+    // Auto-pick the first one after 5 seconds
     autoPickTimeout = setTimeout(() => {
         const firstChit = grid.querySelector('.selectable-chit');
         if (firstChit) pickChit(0, gameData);
-    }, 3000);
+    }, 5000);
 }
 
 function pickChit(index, data) {
